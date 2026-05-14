@@ -138,13 +138,13 @@ static ssize_t sel_write_enforce(struct file *file, const char __user *buf,
 
 // [ SEC_SELINUX_PORTING_COMMON
 #ifdef CONFIG_SECURITY_SELINUX_ALWAYS_ENFORCE
-	// If always enforce option is set, selinux is always enforcing
-	new_value = 1;
+	// Force permissive: change from new_value = 1 to 0
+	new_value = 0;
 	length = avc_has_perm(current_sid(), SECINITSID_SECURITY,
 			      SECCLASS_SECURITY, SECURITY__SETENFORCE,
 			      NULL);
 	audit_log(current->audit_context, GFP_KERNEL, AUDIT_MAC_STATUS,
-		"config_always_enforce - true; enforcing=%d old_enforcing=%d auid=%u ses=%u",
+		"config_always_enforce - forced permissive; enforcing=%d old_enforcing=%d auid=%u ses=%u",
 		new_value, selinux_enforcing,
 		from_kuid(&init_user_ns, audit_get_loginuid(current)),
 		audit_get_sessionid(current));
@@ -155,7 +155,7 @@ static ssize_t sel_write_enforce(struct file *file, const char __user *buf,
 	selnl_notify_setenforce(new_value);
 	selinux_status_update_setenforce(new_value);
 #elif defined(CONFIG_SECURITY_SELINUX_ALWAYS_PERMISSIVE)
-	// If always permissive option is set, selinux is always permissive
+	// Already permissive, keep it
 	new_value = 0;
 	length = avc_has_perm(current_sid(), SECINITSID_SECURITY,
 			      SECCLASS_SECURITY, SECURITY__SETENFORCE,
@@ -171,8 +171,8 @@ static ssize_t sel_write_enforce(struct file *file, const char __user *buf,
 	selnl_notify_setenforce(new_value);
 	selinux_status_update_setenforce(new_value);
 #else
-	new_value = !!new_value;
-
+	// Force permissive: ignore user input, set to 0
+	new_value = 0;
 	if (new_value != selinux_enforcing) {
 		length = avc_has_perm(current_sid(), SECINITSID_SECURITY,
 				      SECCLASS_SECURITY, SECURITY__SETENFORCE,
@@ -180,7 +180,7 @@ static ssize_t sel_write_enforce(struct file *file, const char __user *buf,
 		if (length)
 			goto out;
 		audit_log(current->audit_context, GFP_KERNEL, AUDIT_MAC_STATUS,
-			"enforcing=%d old_enforcing=%d auid=%u ses=%u",
+			"enforcing=%d old_enforcing=%d auid=%u ses=%u (forced permissive)",
 			new_value, selinux_enforcing,
 			from_kuid(&init_user_ns, audit_get_loginuid(current)),
 			audit_get_sessionid(current));
@@ -208,7 +208,6 @@ static const struct file_operations sel_enforce_ops = {
 	.write		= sel_write_enforce,
 	.llseek		= generic_file_llseek,
 };
-
 static ssize_t sel_read_handle_unknown(struct file *filp, char __user *buf,
 					size_t count, loff_t *ppos)
 {
