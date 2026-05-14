@@ -1,0 +1,40 @@
+name: Build M31 Kernel (Permissive)
+
+on:
+  workflow_dispatch:   # lets you start the build manually from the Actions tab
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    name: "Build for M31 | KSU=0 | OLD=1"
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Set timezone
+        uses: szenius/set-timezone@v2.0
+        with:
+          timezoneLinux: "Asia/Kolkata"
+
+      - name: Setup Neutron Clang toolchain
+        run: |
+          sudo apt update
+          sudo apt install bison flex libssl-dev libarchive-tools -y
+          mkdir -p toolchain
+          cd toolchain
+          echo 'Download antman and sync'
+          bash <(curl -s "https://raw.githubusercontent.com/Neutron-Toolchains/antman/main/antman") -S=05012024
+          echo 'Done'
+
+      - name: Run build (M31 only)
+        run: |
+          DEVICE=m31 KSU=0 OLD=1 ./build.sh -c
+
+      - name: Upload kernel ZIP
+        uses: actions/upload-artifact@v4
+        with:
+          name: N_kernel-m31_Clang_18
+          path: AnyKernel3/N*.zip
