@@ -1,4 +1,4 @@
-name: Build M31 Kernel (Permissive)
+name: Build M31 Kernel (Permissive + KernelSU)
 
 on:
   workflow_dispatch:
@@ -6,7 +6,7 @@ on:
 jobs:
   build:
     runs-on: ubuntu-24.04
-    name: "Build for M31 | KSU=0 | OLD=1"
+    name: "Build for M31 | KSU=1 | OLD=1"
 
     steps:
       - name: Checkout source
@@ -29,12 +29,12 @@ jobs:
           bash <(curl -s "https://raw.githubusercontent.com/Neutron-Toolchains/antman/main/antman") -S=05012024
           echo 'Done'
 
-      - name: Run build (M31 only)
+      - name: Run build (M31 only, with KernelSU)
         run: |
-          DEVICE=m31 KSU=0 OLD=1 ./build.sh -c
+          DEVICE=m31 KSU=1 OLD=1 ./build.sh -c
 
       - name: Upload kernel ZIP
         uses: actions/upload-artifact@v4
         with:
-          name: N_kernel-m31_Clang_18
+          name: N_kernel-m31_Clang_18_KSU
           path: AnyKernel3/N*.zip
