@@ -1,40 +1,92 @@
-name: Build M31 Kernel (Permissive + KernelSU)
+name: Build Kernel for Galaxy M31 (Stock OneUI)
 
 on:
   workflow_dispatch:
 
 jobs:
   build:
-    runs-on: ubuntu-24.04
-    name: "Build for M31 | KSU=1 | OLD=0"
-
+    runs-on: ubuntu-20.04
     steps:
       - name: Checkout source
-        uses: actions/checkout@v4
+        uses: actions/checkout@v2
         with:
           fetch-depth: 1
 
-      - name: Set timezone
-        uses: szenius/set-timezone@v2.0
-        with:
-          timezoneLinux: "Asia/Kolkata"
-
-      - name: Setup Neutron Clang toolchain
+      - name: Install dependencies
         run: |
-          sudo apt update
-          sudo apt install bison flex libssl-dev libarchive-tools -y
-          mkdir -p toolchain
-          cd toolchain
-          echo 'Download antman and sync'
-          bash <(curl -s "https://raw.githubusercontent.com/Neutron-Toolchains/antman/main/antman") -S=05012024
-          echo 'Done'
+          sudo apt-get update
+          sudo apt-get install -y bash git make libssl-dev curl bc bison flex \
+                                  libelf-dev cpio zip wget lld python3
 
-      - name: Run build (M31 only, with KernelSU)
+      - name: Setup Neutron Clang 18
         run: |
-          DEVICE=m31 KSU=1 OLD=1 ./build.sh -c
+          mkdir -p toolchain/clang
+          cd toolchain/clang
+          wget https://github.com/Neutron-Clang/neutron-toolchain/releases/download/v18.0.0/neutron-clang-18.tar.gz
+          tar -xzf neutron-clang-18.tar.gz
+          cd ../..
 
-      - name: Upload kernel ZIP
-        uses: actions/upload-artifact@v4
+      - name: Setup GCC for aarch64
+        run: |
+          mkdir -p toolchain/gcc
+          cd toolchain/gcc
+          wget https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/aarch64/aarch64-linux-android-4.9/+archive/refs/tags/android-12.1.0_r2.tar.gz
+          tar -xzf android-12.1.0_r2.tar.gz
+          cd ../..
+
+      - name: Build kernel (M21 defconfig, OLD=1 for M31 stock)
+        run: |
+          export ARCH=arm64
+          export ANDROID_MAJOR_VERSION=s
+          export PLATFORM_VERSION=12
+          export CROSS_COMPILE="$PWD/toolchain/gcc/bin/aarch64-linux-android-"
+          export CLANG_TRIPLE="$PWD/toolchain/clang/bin/aarch64-linux-gnu-"
+          export CC=clang
+          export LD=ld.lld
+          export AR=llvm-ar
+          export NM=llvm-nm
+          export OBJCOPY=llvm-objcopy
+          export OBJDUMP=llvm-objdump
+          export READELF=llvm-readelf
+          export OBJSIZE=llvm-size
+          export STRIP=llvm-strip
+
+          make O=out clean
+          make O=out ARCH=arm64 CC=clang LD=ld.lld AR=llvm-ar NM=llvm-nm \
+               OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump READELF=llvm-readelf \
+               OBJSIZE=llvm-size STRIP=llvm-strip \
+               KCFLAGS=-w CONFIG_SECTION_MISMATCH_WARN_ONLY=y \
+               exynos9610-m21dd_defconfig
+          make O=out ARCH=arm64 CC=clang LD=ld.lld AR=llvm-ar NM=llvm-nm \
+               OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump READELF=llvm-readelf \
+               OBJSIZE=llvm-size STRIP=llvm-strip \
+               KCFLAGS=-w CONFIG_SECTION_MISMATCH_WARN_ONLY=y \
+               -j$(nproc)
+
+      - name: Package with AnyKernel3 (AVB disabled)
+        run: |
+          # Download the same AnyKernel3 template used by the official build
+          wget https://github.com/osm0sis/AnyKernel3/archive/refs/heads/master.zip
+          unzip master.zip
+          cp out/arch/arm64/boot/Image AnyKernel3-master/
+          cd AnyKernel3-master
+
+          # Configure anykernel.sh to disable AVB and set device
+          sed -i 's/do.devicecheck=1/do.devicecheck=0/' anykernel.sh
+          sed -i "s/device.name1=.*/device.name1=m31/" anykernel.sh
+          sed -i "s/kernel.string=.*/kernel.string=N-Kernel-4.14.136-M31/" anykernel.sh
+          # Add AVB disabling to the script
+          echo 'patch_fstab' >> anykernel.sh
+          echo '  sed -i "s/,avb_keys=\\/avb\\/q-gsi.avbpubkey//g" $1' >> anykernel.sh
+          echo '  sed -i "s/,avb=vbmeta//g" $1' >> anykernel.sh
+          echo '  sed -i "s/avb=vbmeta//g" $1' >> anykernel.sh
+          echo 'end_patch_fstab' >> anykernel.sh
+
+          zip -r1 ../M31_Kernel_4.14.136_Stock.zip *
+          cd ..
+
+      - name: Upload flashable zip
+        uses: actions/upload-artifact@v3
         with:
-          name: N_kernel-m31_Clang_18_KSU
-          path: AnyKernel3/N*.zip
+          name: M31-Kernel-Stock-AVB-Disabled
+          path: M31_Kernel_4.14.136_Stock.zip
